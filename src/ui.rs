@@ -1,5 +1,4 @@
 // ui.rs
-
 use bevy::app::AppExit;
 use bevy::prelude::*;
 

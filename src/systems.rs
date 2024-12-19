@@ -1,16 +1,20 @@
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 use bevy::ecs::system::ParamSet;
+use bevy::render::mesh::{Mesh, PrimitiveTopology};
+use bevy::render::render_asset::RenderAssetUsages;
+use bevy::sprite::MaterialMesh2dBundle;
+use crate::components::{GameplayCamera, Obstacle, Player, Floor, NonLethal, SelectedLevel};
+use crate::levels::load_level;
+use crate::states::GameState;
 
 pub mod gameplay {
     use super::*;
-    use crate::components::{GameplayCamera, Obstacle, Player, Floor};
-    use crate::levels::{get_level};
-    use crate::components::SelectedLevel;
-    use crate::states::GameState;
 
     pub fn setup_gameplay(
         mut commands: Commands,
+        mut materials: ResMut<Assets<ColorMaterial>>,
+        mut meshes: ResMut<Assets<Mesh>>,
         selected_level: Res<SelectedLevel>,
     ) {
         info!("Setting up gameplay for level {}", selected_level.level_id);
@@ -23,21 +27,30 @@ pub mod gameplay {
         debug!("Gameplay camera spawned.");
 
         // Load and set up the selected level
-        if let Some(level) = get_level(selected_level.level_id) {
+        if let Some(level) = load_level(selected_level.level_id) {
             info!("Level {} loaded successfully.", level.level_id);
 
-            for obstacle_data in &level.obstacles {
-                debug!(
-                    "Spawning obstacle at position {:?} with size {:?}",
-                    obstacle_data.position, obstacle_data.size
+            // Spawn obstacles
+            for obstacle_data in level.obstacles.iter() {
+                let mut mesh = Mesh::new(
+                    PrimitiveTopology::TriangleList,
+                    RenderAssetUsages::default()
                 );
-                commands.spawn((
-                    SpriteBundle {
-                        sprite: Sprite {
-                            color: Color::srgb(0.8, 0.2, 0.2),
-                            custom_size: Some(obstacle_data.size),
-                            ..default()
-                        },
+
+                let positions = obstacle_data
+                    .vertices
+                    .iter()
+                    .map(|&[x, y]| [x, y, 0.0])
+                    .collect::<Vec<_>>();
+                mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+
+                let indices = vec![0, 1, 2, 2, 3, 0];
+                mesh.insert_indices(bevy::render::mesh::Indices::U32(indices));
+
+                let mut entity = commands.spawn((
+                    MaterialMesh2dBundle {
+                        mesh: meshes.add(mesh).into(),
+                        material: materials.add(ColorMaterial::from(Color::srgb(0.8, 0.2, 0.2))),
                         transform: Transform::from_translation(Vec3::new(
                             obstacle_data.position.x,
                             obstacle_data.position.y,
@@ -47,100 +60,60 @@ pub mod gameplay {
                     },
                     Obstacle,
                     RigidBody::Fixed,
-                    Collider::cuboid(
-                        obstacle_data.size.x / 2.0,
-                        obstacle_data.size.y / 2.0,
+                    Collider::polyline(
+                        obstacle_data.vertices.iter().map(|&[x, y]| Vec2::new(x, y)).collect(),
+                        None,
                     ),
                 ));
+
+                if obstacle_data.non_lethal.unwrap_or(false) {
+                    entity.insert(NonLethal);
+                }
             }
-        } else {
-            error!("Failed to load level {}. Check if it exists in `get_level`.", selected_level.level_id);
+
+            // Spawn the player
+            commands
+                .spawn(RigidBody::Dynamic)
+                .insert(GravityScale(75.0))
+                .insert(
+                    SpriteBundle {
+                        sprite: Sprite {
+                            color: Color::srgb(0.0, 0.0, 1.0),
+                            custom_size: Some(Vec2::new(30.0, 30.0)),
+                            ..Default::default()
+                        },
+                        ..default()
+                    },
+                )
+                .insert(TransformBundle::from(Transform::from_xyz(-200.0, 6.0, 0.0)))
+                .insert(Velocity {
+                    linvel: Vec2::new(1.0, 2.0),
+                    angvel: 0.0,
+                })
+                .insert(Player)
+                .insert(Collider::cuboid(15.0, 15.0))
+                .insert(ActiveEvents::COLLISION_EVENTS)
+                .insert(Sleeping::disabled())
+                .insert(Ccd::enabled())
+                .insert(LockedAxes::ROTATION_LOCKED);
         }
 
-        // Spawn the player
-        // commands.spawn((
-        //     SpriteBundle {
-        //         sprite: Sprite {
-        //             color: Color::rgb(0.0, 0.0, 1),
-        //             custom_size: Some(Vec2::new(30.0, 30.0)),
-        //             ..default()
-        //         },
-        //         transform: Transform::from_translation(Vec3::new(-200.0, 0.0, 0.0)),
-        //         ..default()
-        //     },
-        //     Player,
-        //     RigidBody::Dynamic,
-        //     Collider::cuboid(15.0, 15.0),
-        //     Velocity::zero(),
-        //     GravityScale(1.0),
-        //     ActiveEvents::COLLISION_EVENTS,
-        // ));
-        // debug!("Player spawned at position (-200.0, 0.0).");
-        commands
-            .spawn(RigidBody::Dynamic)
-            .insert(GravityScale(75.0))
-            .insert(
-                (SpriteBundle {
-                    sprite: Sprite {
-                        color: Color::srgb(0.0, 0.0, 1.0),
-                        custom_size: Some(Vec2::new(30.0, 30.0)),
-                        ..Default::default()
-                    },
-                    // transform: Transform::from_translation(Vec3::new(-200.0, 0.0, 0.0)),
-                    ..default()
-                },
-                    //Player,
-                    // Collider::cuboid(15.0, 15.0),
-                    //Velocity::zero(),
-                    //GravityScale(1.0),
-                    // ActiveEvents::COLLISION_EVENTS,
-                )
-            )
-            .insert(TransformBundle::from(Transform::from_xyz(-200.0, 6.0, 0.0)))
-            .insert(Velocity {
-                linvel: Vec2::new(1.0, 2.0),
-                angvel: 0.0,
-            })
-            .insert(Player)
-            .insert(Collider::cuboid(15.0, 15.0))
-            .insert(ActiveEvents::COLLISION_EVENTS)
-            .insert(Sleeping::disabled())
-            .insert(Ccd::enabled())
-            .insert(LockedAxes::ROTATION_LOCKED);
-
-        // spawn floor
-        // commands
-        //     .spawn(RigidBody::Fixed)
-        //     .insert(
-        //         Collider::cuboid(2000.0, 3.0)
-        //     )
-        //     .insert(TransformBundle::from(Transform::from_xyz(0.0, -200.0, 0.0)))
-        //     .insert(SpriteBundle {
-        //         sprite: Sprite {
-        //             color: Color::srgb(0.0, 0.0, 0.0),
-        //             custom_size: Some(Vec2::new(2000.0, 3.0)),
-        //             ..Default::default()
-        //         },
-        //         ..Default::default()
-        //     });
     }
 
     pub fn collision_event_system(
         mut collision_events: EventReader<CollisionEvent>,
         mut next_state: ResMut<NextState<GameState>>,
         obstacle_query: Query<Entity, With<Obstacle>>,
+        non_lethal_query: Query<Entity, With<NonLethal>>,
         player_query: Query<Entity, With<Player>>,
     ) {
-        // debug!("Processing collision events...");
         for event in collision_events.read() {
             match event {
                 CollisionEvent::Started(e1, e2, _) => {
-                    debug!("Collision started between entities {:?} and {:?}.", e1, e2);
-
                     if let Ok(player_entity) = player_query.get_single() {
-                        if (*e1 == player_entity && obstacle_query.get(*e2).is_ok())
-                            || (*e2 == player_entity && obstacle_query.get(*e1).is_ok())
-                        {
+                        let is_non_lethal = non_lethal_query.get(*e1).is_ok() || non_lethal_query.get(*e2).is_ok();
+                        if !is_non_lethal && ((*e1 == player_entity && obstacle_query.get(*e2).is_ok())
+                            || (*e2 == player_entity && obstacle_query.get(*e1).is_ok())) {
                             handle_collision(&mut next_state);
                         }
                     } else {
@@ -153,7 +126,7 @@ pub mod gameplay {
             }
         }
     }
-    
+
     pub fn handle_collision(next_state: &mut ResMut<NextState<GameState>>) {
         info!("Player collided with an obstacle. Returning to Title Screen.");
         next_state.set(GameState::LevelSelection);
@@ -182,7 +155,7 @@ pub mod gameplay {
         for mut velocity in &mut query {
             velocity.linvel.x = 200.0;
             //debug!("Player horizontal velocity set to 200.0.");
-            debug!("Abs: {}", velocity.linvel.y.abs());
+            // debug!("Abs: {}", velocity.linvel.y.abs());
 
             if keyboard_input.pressed(KeyCode::Space) || keyboard_input.pressed(KeyCode::ArrowUp) {
                 if velocity.linvel.y.abs() < 0.001 {
@@ -190,6 +163,16 @@ pub mod gameplay {
                     debug!("Player vertical velocity set to 300.0.");
                 }
             }
+        }
+    }
+
+    pub fn exit_level_system(
+        keyboard_input: Res<ButtonInput<KeyCode>>,
+        mut next_state: ResMut<NextState<GameState>>
+    ) {
+        if keyboard_input.just_pressed(KeyCode::Escape) {
+            info!("Player exited the level. Returning to Title Screen.");
+            next_state.set(GameState::TitleScreen);
         }
     }
 
@@ -278,5 +261,4 @@ pub mod gameplay {
             ));
         }
     }
-
 }

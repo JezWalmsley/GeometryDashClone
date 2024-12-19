@@ -36,3 +36,6 @@ pub struct Obstacle;
 
 #[derive(Component)]
 pub struct Floor;
+
+#[derive(Component)]
+pub struct NonLethal;
