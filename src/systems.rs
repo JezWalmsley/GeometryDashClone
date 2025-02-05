@@ -103,17 +103,28 @@ pub mod gameplay {
     pub fn collision_event_system(
         mut collision_events: EventReader<CollisionEvent>,
         mut next_state: ResMut<NextState<GameState>>,
-        obstacle_query: Query<Entity, With<Obstacle>>,
+        obstacle_query: Query<(Entity, &Transform), With<Obstacle>>,
         non_lethal_query: Query<Entity, With<NonLethal>>,
-        player_query: Query<Entity, With<Player>>,
+        player_query: Query<&Transform, With<Player>>,
     ) {
         for event in collision_events.read() {
             match event {
                 CollisionEvent::Started(e1, e2, _) => {
-                    if let Ok(player_entity) = player_query.get_single() {
-                        let is_non_lethal = non_lethal_query.get(*e1).is_ok() || non_lethal_query.get(*e2).is_ok();
-                        if !is_non_lethal && ((*e1 == player_entity && obstacle_query.get(*e2).is_ok())
-                            || (*e2 == player_entity && obstacle_query.get(*e1).is_ok())) {
+                    if let Ok(player_transform) = player_query.get_single() {
+                        let (obstacle_entity, obstacle_transform) = if let Ok((entity, transform)) = obstacle_query.get(*e1) {
+                            (entity, transform)
+                        } else if let Ok((entity, transform)) = obstacle_query.get(*e2) {
+                            (entity, transform)
+                        } else {
+                            continue;
+                        };
+
+                        let is_non_lethal = non_lethal_query.get(obstacle_entity).is_ok();
+                        if is_non_lethal && is_top_collision(player_transform, obstacle_transform) {
+                            // Allow jumping on top of non-lethal obstacles
+                            continue;
+                        } else {
+                            // Handle lethal collision
                             handle_collision(&mut next_state);
                         }
                     } else {
@@ -130,6 +141,12 @@ pub mod gameplay {
     pub fn handle_collision(next_state: &mut ResMut<NextState<GameState>>) {
         info!("Player collided with an obstacle. Returning to Title Screen.");
         next_state.set(GameState::LevelSelection);
+    }
+
+    pub fn is_top_collision(player_transform: &Transform, obstacle_transform: &Transform) -> bool {
+        let player_bottom = player_transform.translation.y - 15.0;
+        let obstacle_top = obstacle_transform.translation.y + 12.5;
+        player_bottom > obstacle_top
     }
 
     pub fn cleanup_gameplay(
@@ -154,7 +171,7 @@ pub mod gameplay {
     ) {
         for mut velocity in &mut query {
             velocity.linvel.x = 200.0;
-            //debug!("Player horizontal velocity set to 200.0.");
+            // debug!("Player horizontal: {}", velocity.linvel.x);
             // debug!("Abs: {}", velocity.linvel.y.abs());
 
             if keyboard_input.pressed(KeyCode::Space) || keyboard_input.pressed(KeyCode::ArrowUp) {
@@ -171,8 +188,8 @@ pub mod gameplay {
         mut next_state: ResMut<NextState<GameState>>
     ) {
         if keyboard_input.just_pressed(KeyCode::Escape) {
-            info!("Player exited the level. Returning to Title Screen.");
-            next_state.set(GameState::TitleScreen);
+            info!("Player exited the level. Returning to Level Selection.");
+            next_state.set(GameState::LevelSelection);
         }
     }
 
@@ -192,16 +209,6 @@ pub mod gameplay {
                 let target_camera_x = player_x + 100.0; // Offset camera ahead of the player
                 camera_transform.translation.x = target_camera_x;
             }
-
-            // Move obstacles
-            // for mut obstacle_transform in param_set.p1().iter_mut() {
-            //     obstacle_transform.translation.x -= 200.0 * time.delta_seconds();
-            //
-            //     // Optionally, reset obstacles that move off-screen
-            //     if obstacle_transform.translation.x < player_x - 500.0 {
-            //         obstacle_transform.translation.x = player_x + 500.0;
-            //     }
-            // }
         }
     }
 
@@ -248,7 +255,7 @@ pub mod gameplay {
             commands.spawn((
                 SpriteBundle {
                     sprite: Sprite {
-                        color: Color::srgb(1.0, 0.0, 0.0),
+                        color: Color::srgb(1.0, 1.0, 1.0),
                         custom_size: Some(Vec2::new(floor_width, floor_height)),
                         ..Default::default()
                     },

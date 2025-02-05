@@ -1,14 +1,14 @@
 use bevy::prelude::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Level {
     pub level_id: usize,
     pub obstacles: Vec<ObstacleData>,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ObstacleData {
     pub position: Vec2,
     pub vertices: [[f32; 2]; 4], // Define vertices of the triangle
@@ -18,6 +18,7 @@ pub struct ObstacleData {
 // Example level loading function
 pub fn load_level(level_id: usize) -> Option<Level> {
     let path = format!("assets/levels/level_{}.json", level_id);
+    // let path = format!("assets/levels/level_edited.json");
     info!("Attempting to load level file: {}", path);
 
     let data = match fs::read_to_string(&path) {

@@ -1,12 +1,14 @@
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 use bevy::log::*;
+use editor::EditorPlugin;
 
 mod components;
 mod levels;
 mod states;
 mod systems;
 mod ui;
+mod editor;
 
 use components::SelectedLevel;
 use states::GameState;
@@ -37,6 +39,7 @@ fn main() {
             }
         ))
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
+        .add_plugins(EditorPlugin)
         .init_state::<GameState>()
         .insert_resource(SelectedLevel::default())
         // Title Screen Systems

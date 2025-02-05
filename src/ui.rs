@@ -28,7 +28,7 @@ pub fn setup_title_screen(mut commands: Commands, asset_server: Res<AssetServer>
                 flex_direction: FlexDirection::Column,
                 ..default()
             },
-            background_color: BackgroundColor(Color::srgb(0.0, 0.0, 0.0)),
+            background_color: BackgroundColor(Color::rgb(0.0, 0.0, 0.0)),
             ..default()
         })
         .with_children(|parent| {
@@ -63,7 +63,7 @@ pub fn setup_title_screen(mut commands: Commands, asset_server: Res<AssetServer>
                             align_items: AlignItems::Center,
                             ..default()
                         },
-                        background_color: BackgroundColor(Color::srgb(0.5, 0.5, 0.5)),
+                        background_color: BackgroundColor(Color::rgb(0.5, 0.5, 0.5)),
                         ..default()
                     },
                     StartButton,
@@ -80,6 +80,35 @@ pub fn setup_title_screen(mut commands: Commands, asset_server: Res<AssetServer>
                 });
             debug!("Start button added to title screen.");
 
+            // Edit Level button
+            parent
+                .spawn((
+                    ButtonBundle {
+                        style: Style {
+                            width: Val::Px(200.0),
+                            height: Val::Px(65.0),
+                            margin: UiRect::all(Val::Px(10.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::rgb(0.5, 0.5, 0.5)),
+                        ..default()
+                    },
+                    LevelButton { level_id: 0 }, // Special marker for editor
+                ))
+                .with_children(|button| {
+                    button.spawn(TextBundle::from_section(
+                        "Edit Level",
+                        TextStyle {
+                            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                            font_size: 40.0,
+                            color: Color::BLACK,
+                        },
+                    ));
+                });
+            debug!("Edit Level button added to title screen.");
+
             // Quit button
             parent
                 .spawn((
@@ -92,7 +121,7 @@ pub fn setup_title_screen(mut commands: Commands, asset_server: Res<AssetServer>
                             align_items: AlignItems::Center,
                             ..default()
                         },
-                        background_color: BackgroundColor(Color::srgb(0.5, 0.5, 0.5)),
+                        background_color: BackgroundColor(Color::rgb(0.5, 0.5, 0.5)),
                         ..default()
                     },
                     QuitButton,
@@ -118,36 +147,41 @@ pub fn button_system(
             &mut BackgroundColor,
             Option<&StartButton>,
             Option<&QuitButton>,
+            Option<&LevelButton>,
         ),
         (Changed<Interaction>, With<Button>),
     >,
     mut next_state: ResMut<NextState<GameState>>,
     mut app_exit_events: EventWriter<AppExit>,
 ) {
-    for (interaction, mut color, start_button, quit_button) in interaction_query.iter_mut() {
+    for (interaction, mut color, start_button, quit_button, level_button) in interaction_query.iter_mut() {
         match *interaction {
             Interaction::Pressed => {
                 debug!("Button pressed.");
-                *color = BackgroundColor(Color::srgb(0.25, 0.25, 0.25));
+                *color = BackgroundColor(Color::rgb(0.25, 0.25, 0.25));
                 if start_button.is_some() {
                     info!("Start button pressed. Transitioning to Level Selection.");
                     next_state.set(GameState::LevelSelection);
                 } else if quit_button.is_some() {
                     info!("Quit button pressed. Triggering AppExit event.");
                     app_exit_events.send(AppExit::Success);
+                } else if let Some(level_button) = level_button {
+                    if level_button.level_id == 0 {
+                        info!("Edit Level button pressed. Transitioning to Editor state.");
+                        next_state.set(GameState::Editor);
+                    }
                 }
             }
             Interaction::Hovered => {
-                *color = BackgroundColor(Color::srgb(0.75, 0.75, 0.75));
+                *color = BackgroundColor(Color::rgb(0.75, 0.75, 0.75));
                 debug!("Button hovered.");
             }
             Interaction::None => {
-                *color = BackgroundColor(Color::srgb(0.5, 0.5, 0.5));
+                *color = BackgroundColor(Color::rgb(0.5, 0.5, 0.5));
             }
         }
     }
 }
-
 
 pub fn setup_level_selection(mut commands: Commands, asset_server: Res<AssetServer>) {
     info!("Setting up level selection screen...");
@@ -224,7 +258,7 @@ pub fn setup_level_selection(mut commands: Commands, asset_server: Res<AssetServ
                 debug!("Level {} button added.", level_id);
             }
         });
-    
+
     // Back button
     commands
         .spawn((

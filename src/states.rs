@@ -6,4 +6,5 @@ pub enum GameState {
     TitleScreen,
     LevelSelection,
     Playing,
+    Editor,
 }
