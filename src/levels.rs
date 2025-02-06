@@ -13,6 +13,7 @@ pub struct ObstacleData {
     pub position: Vec2,
     pub vertices: [[f32; 2]; 4], // Define vertices of the triangle
     pub non_lethal: Option<bool>,
+    pub is_finish: Option<bool>,
 }
 
 // Example level loading function

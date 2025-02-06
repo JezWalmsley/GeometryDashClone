@@ -4,9 +4,10 @@ use bevy::ecs::system::ParamSet;
 use bevy::render::mesh::{Mesh, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::sprite::MaterialMesh2dBundle;
-use crate::components::{GameplayCamera, Obstacle, Player, Floor, NonLethal, SelectedLevel};
+use crate::components::{GameplayCamera, Obstacle, Player, Floor, NonLethal, SelectedLevel, JumpBuffer, FinishLine};
 use crate::levels::load_level;
 use crate::states::GameState;
+use std::time::Duration;
 
 pub mod gameplay {
     use super::*;
@@ -69,6 +70,11 @@ pub mod gameplay {
                 if obstacle_data.non_lethal.unwrap_or(false) {
                     entity.insert(NonLethal);
                 }
+
+                if obstacle_data.is_finish.unwrap_or(false) {
+                    entity.insert(FinishLine);
+                    entity.insert(ActiveEvents::COLLISION_EVENTS);
+                }
             }
 
             // Spawn the player
@@ -95,7 +101,10 @@ pub mod gameplay {
                 .insert(ActiveEvents::COLLISION_EVENTS)
                 .insert(Sleeping::disabled())
                 .insert(Ccd::enabled())
-                .insert(LockedAxes::ROTATION_LOCKED);
+                .insert(LockedAxes::ROTATION_LOCKED)
+                .insert(JumpBuffer {
+                    timer: Timer::from_seconds(0.1, TimerMode::Once),
+                });
         }
 
     }
@@ -105,20 +114,30 @@ pub mod gameplay {
         mut next_state: ResMut<NextState<GameState>>,
         obstacle_query: Query<(Entity, &Transform), With<Obstacle>>,
         non_lethal_query: Query<Entity, With<NonLethal>>,
+        finish_query: Query<Entity, With<FinishLine>>, // Added for finish line detection
         player_query: Query<&Transform, With<Player>>,
     ) {
         for event in collision_events.read() {
             match event {
                 CollisionEvent::Started(e1, e2, _) => {
                     if let Ok(player_transform) = player_query.get_single() {
+                        // Check if collision involves an obstacle
                         let (obstacle_entity, obstacle_transform) = if let Ok((entity, transform)) = obstacle_query.get(*e1) {
                             (entity, transform)
                         } else if let Ok((entity, transform)) = obstacle_query.get(*e2) {
                             (entity, transform)
                         } else {
-                            continue;
+                            continue; // Skip if no obstacle is involved
                         };
 
+                        // Check for finish line collision
+                        if finish_query.get(obstacle_entity).is_ok() {
+                            info!("Player reached the finish line!");
+                            next_state.set(GameState::VictoryScreen); // Trigger victory screen
+                            continue; // Skip further collision handling
+                        }
+
+                        // Check if the obstacle is non-lethal
                         let is_non_lethal = non_lethal_query.get(obstacle_entity).is_ok();
                         if is_non_lethal && is_top_collision(player_transform, obstacle_transform) {
                             // Allow jumping on top of non-lethal obstacles
@@ -138,9 +157,10 @@ pub mod gameplay {
         }
     }
 
+
     pub fn handle_collision(next_state: &mut ResMut<NextState<GameState>>) {
         info!("Player collided with an obstacle. Returning to Title Screen.");
-        next_state.set(GameState::LevelSelection);
+        next_state.set(GameState::GameOver);
     }
 
     pub fn is_top_collision(player_transform: &Transform, obstacle_transform: &Transform) -> bool {
@@ -167,17 +187,27 @@ pub mod gameplay {
 
     pub fn player_movement_system(
         keyboard_input: Res<ButtonInput<KeyCode>>,
-        mut query: Query<&mut Velocity, With<Player>>,
+        time: Res<Time>,
+        mut query: Query<(&mut Velocity, &mut JumpBuffer, &Transform), With<Player>>,
     ) {
-        for mut velocity in &mut query {
+        // Implement above with jump buffer (iter 2)
+        for (mut velocity, mut jump_buffer, transform) in query.iter_mut() {
             velocity.linvel.x = 200.0;
-            // debug!("Player horizontal: {}", velocity.linvel.x);
-            // debug!("Abs: {}", velocity.linvel.y.abs());
 
+            // reduce jump buffer time
+            jump_buffer.timer.tick(time.delta());
+
+            // store jump input in buffer
             if keyboard_input.pressed(KeyCode::Space) || keyboard_input.pressed(KeyCode::ArrowUp) {
+                jump_buffer.timer.reset();
+            }
+
+            // if player is on the ground and was recently pressed, apply force to jump
+            if transform.translation.y <= 0.0 && jump_buffer.timer.elapsed_secs() < 0.1 {
                 if velocity.linvel.y.abs() < 0.001 {
                     velocity.linvel.y = 300.0;
-                    debug!("Player vertical velocity set to 300.0.");
+                    debug!("Buffered Jump Activated: Player Vertical velocity set to 300");
+                    jump_buffer.timer.set_elapsed(Duration::from_secs_f32(0.1));
                 }
             }
         }
