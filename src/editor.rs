@@ -94,7 +94,8 @@ fn save_level(query: &Query<&Transform, With<Obstacle>>) {
                 [30.0, 30.0],
                 [30.0, 0.0],
             ],
-            non_lethal: Some(false)
+            non_lethal: Some(false),
+            is_finish: Some(false),
         })
     }
 

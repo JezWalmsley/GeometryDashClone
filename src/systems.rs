@@ -4,11 +4,13 @@ use bevy::ecs::system::ParamSet;
 use bevy::render::mesh::{Mesh, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::sprite::MaterialMesh2dBundle;
-use crate::components::{GameplayCamera, Obstacle, Player, Floor, NonLethal, SelectedLevel};
+use bevy::audio::*;
+use crate::components::{GameplayCamera, Obstacle, Player, Floor, NonLethal, SelectedLevel, FinishLine, LevelProgress, DeathSound, VictorySound, GameAudio};
 use crate::levels::load_level;
 use crate::states::GameState;
 
 pub mod gameplay {
+    use crate::components::{DeathSound, ProgressText, VictorySound};
     use super::*;
 
     pub fn setup_gameplay(
@@ -16,6 +18,7 @@ pub mod gameplay {
         mut materials: ResMut<Assets<ColorMaterial>>,
         mut meshes: ResMut<Assets<Mesh>>,
         selected_level: Res<SelectedLevel>,
+        asset_server: Res<AssetServer>,
     ) {
         info!("Setting up gameplay for level {}", selected_level.level_id);
 
@@ -69,6 +72,12 @@ pub mod gameplay {
                 if obstacle_data.non_lethal.unwrap_or(false) {
                     entity.insert(NonLethal);
                 }
+
+                if obstacle_data.is_finish.unwrap_or(false) {
+                    info!("Finish line obstacle found at position: {:?}", obstacle_data.position);
+                    entity.insert(FinishLine);
+                    entity.insert(ActiveEvents::COLLISION_EVENTS); // Ensure collision events are triggered
+                }
             }
 
             // Spawn the player
@@ -97,50 +106,67 @@ pub mod gameplay {
                 .insert(Ccd::enabled())
                 .insert(LockedAxes::ROTATION_LOCKED);
         }
+        // Progess text
+        commands.spawn((
+            TextBundle::from_section(
+                "Progress: 0%",
+                TextStyle {
+                    font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                    font_size: 30.0,
+                    color: Color::WHITE,
+                },
+            ),
+            ProgressText,
+        ));
 
     }
 
+    // Collision Event System
     pub fn collision_event_system(
         mut collision_events: EventReader<CollisionEvent>,
         mut next_state: ResMut<NextState<GameState>>,
+        game_audio: Res<GameAudio>,             // Access loaded audio
+        mut commands: Commands,                 // Needed to spawn AudioBundle
         obstacle_query: Query<(Entity, &Transform), With<Obstacle>>,
-        non_lethal_query: Query<Entity, With<NonLethal>>,
+        finish_query: Query<Entity, With<FinishLine>>,
         player_query: Query<&Transform, With<Player>>,
     ) {
         for event in collision_events.read() {
             match event {
                 CollisionEvent::Started(e1, e2, _) => {
                     if let Ok(player_transform) = player_query.get_single() {
-                        let (obstacle_entity, obstacle_transform) = if let Ok((entity, transform)) = obstacle_query.get(*e1) {
-                            (entity, transform)
-                        } else if let Ok((entity, transform)) = obstacle_query.get(*e2) {
-                            (entity, transform)
+                        let (obstacle_entity, _) = if let Ok((entity, _)) = obstacle_query.get(*e1) {
+                            (entity, true)
+                        } else if let Ok((entity, _)) = obstacle_query.get(*e2) {
+                            (entity, true)
                         } else {
                             continue;
                         };
 
-                        let is_non_lethal = non_lethal_query.get(obstacle_entity).is_ok();
-                        if is_non_lethal && is_top_collision(player_transform, obstacle_transform) {
-                            // Allow jumping on top of non-lethal obstacles
-                            continue;
+                        // Play Victory Sound if finish line is reached
+                        if finish_query.get(obstacle_entity).is_ok() {
+                            commands.spawn(AudioBundle {
+                                source: game_audio.victory_sound.clone(),
+                                settings: PlaybackSettings::ONCE,
+                            });
+                            next_state.set(GameState::VictoryScreen);
                         } else {
-                            // Handle lethal collision
-                            handle_collision(&mut next_state);
+                            // Play Death Sound for lethal collisions
+                            commands.spawn(AudioBundle {
+                                source: game_audio.death_sound.clone(),
+                                settings: PlaybackSettings::ONCE,
+                            });
+                            next_state.set(GameState::GameOver);
                         }
-                    } else {
-                        error!("Failed to retrieve player entity. Collision handling skipped.");
                     }
                 }
-                CollisionEvent::Stopped(_, _, _) => {
-                    debug!("Collision stopped.");
-                }
+                _ => {}
             }
         }
     }
 
-    pub fn handle_collision(next_state: &mut ResMut<NextState<GameState>>) {
-        info!("Player collided with an obstacle. Returning to Title Screen.");
-        next_state.set(GameState::LevelSelection);
+    fn handle_collision(next_state: &mut ResMut<NextState<GameState>>) {
+        next_state.set(GameState::GameOver);
     }
 
     pub fn is_top_collision(player_transform: &Transform, obstacle_transform: &Transform) -> bool {
@@ -269,3 +295,58 @@ pub mod gameplay {
         }
     }
 }
+
+pub fn progress_tracker_system(
+    player_query: Query<&Transform, With<Player>>,
+    finish_query: Query<&Transform, With<FinishLine>>,
+    mut progress: ResMut<LevelProgress>,
+) {
+    if let (Ok(player_transform), Ok(finish_transform)) =
+        (player_query.get_single(), finish_query.get_single())
+    {
+        let start_x: f32 = -200.0; // Player starting X position
+        let player_x: f32 = player_transform.translation.x;
+        let finish_x: f32 = finish_transform.translation.x;
+
+        // Ensure we don’t divide by zero or go negative
+        let total_distance = (finish_x - start_x).max(1.0);
+        let distance_traveled: f32 = (player_x - start_x).max(0.0);
+
+        // Calculate progress percentage
+        let progress_percentage = (distance_traveled / total_distance) * 100.0;
+        progress.current_percentage = progress_percentage.clamp(0.0, 100.0); // Clamp to avoid overflows
+    }
+}
+
+pub fn setup_audio_system(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let death_sound = asset_server.load("audio/death.ogg");
+    let victory_sound = asset_server.load("audio/victory.ogg");
+
+    // Store audio handles as a resource
+    commands.insert_resource(GameAudio {
+        death_sound,
+        victory_sound,
+    });
+}
+
+// Play Death Sound
+pub fn play_death_sound(mut commands: Commands, query: Query<Entity, With<DeathSound>>) {
+    for entity in &query {
+        commands.entity(entity).insert(PlaybackSettings::ONCE);
+    }
+}
+
+// Play Victory Sound
+pub fn play_victory_sound(mut commands: Commands, query: Query<Entity, With<VictorySound>>) {
+    for entity in &query {
+        commands.entity(entity).insert(PlaybackSettings::ONCE);
+    }
+}
+
+pub fn play_sound(commands: &mut Commands, sound: Handle<AudioSource>) {
+    commands.spawn(AudioBundle {
+        source: sound,
+        settings: PlaybackSettings::ONCE,
+    });
+}
+
