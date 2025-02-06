@@ -19,7 +19,7 @@ use ui::{
 };
 use crate::systems::gameplay::{collision_event_system, continuous_floor_system, exit_level_system, level_scrolling_system, player_movement_system, spawn_floor};
 use bevy::log::LogPlugin;
-use crate::ui::{cleanup_game_over_menu, game_over_menu_buttons, setup_game_over_menu, setup_victory_screen, victory_screen_buttons};
+
 
 fn main() {
     info!("Starting the application...");
@@ -64,11 +64,6 @@ fn main() {
             )
                 .run_if(in_state(GameState::Playing)),
         )
-        .add_systems(OnEnter(GameState::GameOver), setup_game_over_menu)
-        .add_systems(Update, game_over_menu_buttons.run_if(in_state(GameState::GameOver)))
-        .add_systems(OnExit(GameState::GameOver), cleanup_game_over_menu)
-        .add_systems(OnEnter(GameState::VictoryScreen), setup_victory_screen)
-        .add_systems(Update, victory_screen_buttons.run_if(in_state(GameState::VictoryScreen)))
         // Run the app
         .run();
     info!("Application has stopped running.");
