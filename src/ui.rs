@@ -3,7 +3,7 @@ use bevy::app::AppExit;
 use bevy::prelude::*;
 
 use crate::components::{
-    BackButton, LevelButton, QuitButton, SelectedLevel, StartButton, UICamera,
+    BackButton, LevelButton, QuitButton, SelectedLevel, StartButton, UICamera, RestartButton, GameOverText, ReturnToMenuButton,
 };
 use crate::states::GameState;
 
@@ -28,7 +28,7 @@ pub fn setup_title_screen(mut commands: Commands, asset_server: Res<AssetServer>
                 flex_direction: FlexDirection::Column,
                 ..default()
             },
-            background_color: BackgroundColor(Color::rgb(0.0, 0.0, 0.0)),
+            background_color: BackgroundColor(Color::srgb(0.0, 0.0, 0.0)),
             ..default()
         })
         .with_children(|parent| {
@@ -63,7 +63,7 @@ pub fn setup_title_screen(mut commands: Commands, asset_server: Res<AssetServer>
                             align_items: AlignItems::Center,
                             ..default()
                         },
-                        background_color: BackgroundColor(Color::rgb(0.5, 0.5, 0.5)),
+                        background_color: BackgroundColor(Color::srgb(0.5, 0.5, 0.5)),
                         ..default()
                     },
                     StartButton,
@@ -92,7 +92,7 @@ pub fn setup_title_screen(mut commands: Commands, asset_server: Res<AssetServer>
                             align_items: AlignItems::Center,
                             ..default()
                         },
-                        background_color: BackgroundColor(Color::rgb(0.5, 0.5, 0.5)),
+                        background_color: BackgroundColor(Color::srgb(0.5, 0.5, 0.5)),
                         ..default()
                     },
                     LevelButton { level_id: 0 }, // Special marker for editor
@@ -121,7 +121,7 @@ pub fn setup_title_screen(mut commands: Commands, asset_server: Res<AssetServer>
                             align_items: AlignItems::Center,
                             ..default()
                         },
-                        background_color: BackgroundColor(Color::rgb(0.5, 0.5, 0.5)),
+                        background_color: BackgroundColor(Color::srgb(0.5, 0.5, 0.5)),
                         ..default()
                     },
                     QuitButton,
@@ -158,7 +158,7 @@ pub fn button_system(
         match *interaction {
             Interaction::Pressed => {
                 debug!("Button pressed.");
-                *color = BackgroundColor(Color::rgb(0.25, 0.25, 0.25));
+                *color = BackgroundColor(Color::srgb(0.25, 0.25, 0.25));
                 if start_button.is_some() {
                     info!("Start button pressed. Transitioning to Level Selection.");
                     next_state.set(GameState::LevelSelection);
@@ -173,11 +173,11 @@ pub fn button_system(
                 }
             }
             Interaction::Hovered => {
-                *color = BackgroundColor(Color::rgb(0.75, 0.75, 0.75));
+                *color = BackgroundColor(Color::srgb(0.75, 0.75, 0.75));
                 debug!("Button hovered.");
             }
             Interaction::None => {
-                *color = BackgroundColor(Color::rgb(0.5, 0.5, 0.5));
+                *color = BackgroundColor(Color::srgb(0.5, 0.5, 0.5));
             }
         }
     }
@@ -338,6 +338,146 @@ pub fn cleanup_level_selection(
     }
 }
 
+pub fn setup_game_over_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
+    info!("Setting up the Game Over menu...");
+
+    // Spawn a UI camera
+    commands.spawn((Camera2dBundle::default(), UICamera));
+
+    // Root node for the menu
+    commands
+        .spawn(NodeBundle {
+            style: Style {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            background_color: BackgroundColor(Color::srgb(0.1, 0.1, 0.1)), // Dark background
+            ..default()
+        })
+        .with_children(|parent| {
+            // Game Over title
+            parent.spawn(TextBundle {
+                text: Text::from_section(
+                    "Game Over",
+                    TextStyle {
+                        font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                        font_size: 80.0,
+                        color: Color::WHITE,
+                    },
+                ),
+                style: Style {
+                    margin: UiRect::bottom(Val::Px(50.0)),
+                    align_self: AlignSelf::Center,
+                    ..default()
+                },
+                ..default()
+            });
+
+            // Restart button
+            parent
+                .spawn((
+                    ButtonBundle {
+                        style: Style {
+                            width: Val::Px(200.0),
+                            height: Val::Px(65.0),
+                            margin: UiRect::all(Val::Px(10.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::srgb(0.5, 0.5, 0.5)),
+                        ..default()
+                    },
+                    RestartButton,
+                ))
+                .with_children(|button| {
+                    button.spawn(TextBundle::from_section(
+                        "Restart",
+                        TextStyle {
+                            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                            font_size: 40.0,
+                            color: Color::BLACK,
+                        },
+                    ));
+                });
+
+            // Return to Menu button
+            parent
+                .spawn((
+                    ButtonBundle {
+                        style: Style {
+                            width: Val::Px(200.0),
+                            height: Val::Px(65.0),
+                            margin: UiRect::all(Val::Px(10.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::srgb(0.5, 0.5, 0.5)),
+                        ..default()
+                    },
+                    ReturnToMenuButton,
+                ))
+                .with_children(|button| {
+                    button.spawn(TextBundle::from_section(
+                        "Return to Menu",
+                        TextStyle {
+                            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                            font_size: 40.0,
+                            color: Color::BLACK,
+                        },
+                    ));
+                });
+        });
+}
+
+pub fn game_over_menu_buttons(
+    mut interaction_query: Query<
+        (&Interaction, &mut BackgroundColor, Option<&RestartButton>, Option<&ReturnToMenuButton>),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    for (interaction, mut color, restart_button, return_to_menu_button) in interaction_query.iter_mut() {
+        match *interaction {
+            Interaction::Pressed => {
+                *color = BackgroundColor(Color::srgb(0.25, 0.25, 0.25)); // Dark gray when pressed
+                if restart_button.is_some() {
+                    info!("Restart button pressed. Restarting level...");
+                    next_state.set(GameState::Playing);
+                } else if return_to_menu_button.is_some() {
+                    info!("Return to Menu button pressed. Returning to main menu...");
+                    next_state.set(GameState::TitleScreen);
+                }
+            }
+            Interaction::Hovered => {
+                *color = BackgroundColor(Color::srgb(0.75, 0.75, 0.75)); // Light gray when hovered
+            }
+            Interaction::None => {
+                *color = BackgroundColor(Color::srgb(0.5, 0.5, 0.5)); // Default gray
+            }
+        }
+    }
+}
+
+pub fn cleanup_game_over_menu(
+    mut commands: Commands,
+    ui_entities: Query<Entity, With<Node>>,
+    camera_entities: Query<Entity, With<UICamera>>,
+) {
+    for entity in ui_entities.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+    for entity in camera_entities.iter() {
+        commands.entity(entity).despawn();
+    }
+}
+
+
 pub fn cleanup_title_screen(
     mut commands: Commands,
     ui_entities: Query<Entity, With<Node>>,
@@ -352,3 +492,5 @@ pub fn cleanup_title_screen(
         commands.entity(entity).despawn();
     }
 }
+
+

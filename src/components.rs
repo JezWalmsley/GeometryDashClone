@@ -39,3 +39,18 @@ pub struct Floor;
 
 #[derive(Component)]
 pub struct NonLethal;
+
+#[derive(Component)]
+pub struct JumpBuffer {
+    pub timer: Timer,
+}
+
+#[derive(Component)]
+pub struct GameOverText;
+
+#[derive(Component)]
+pub struct RestartButton;
+
+#[derive(Component)]
+pub struct ReturnToMenuButton;
+
