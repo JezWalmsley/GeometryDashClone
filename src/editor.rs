@@ -96,6 +96,7 @@ fn save_level(query: &Query<&Transform, With<Obstacle>>) {
             ],
             non_lethal: Some(false),
             is_finish: Some(false),
+            color: Some([1.0, 0.0, 0.0]),
         })
     }
 

@@ -5,9 +5,10 @@ use bevy::render::mesh::{Mesh, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::sprite::MaterialMesh2dBundle;
 use bevy::audio::*;
-use crate::components::{GameplayCamera, Obstacle, Player, Floor, NonLethal, SelectedLevel, FinishLine, LevelProgress, DeathSound, VictorySound, GameAudio};
+use crate::components::{GameplayCamera, Obstacle, Player, Floor, NonLethal, SelectedLevel, FinishLine, LevelProgress, DeathSound, VictorySound, GameAudio, ProgressHistory, ProgressEntry};
 use crate::levels::load_level;
 use crate::states::GameState;
+use chrono::Local;
 
 pub mod gameplay {
     use crate::components::{DeathSound, ProgressText, VictorySound};
@@ -50,10 +51,13 @@ pub mod gameplay {
                 let indices = vec![0, 1, 2, 2, 3, 0];
                 mesh.insert_indices(bevy::render::mesh::Indices::U32(indices));
 
+                let color = obstacle_data.color.unwrap_or([0.8, 0.2, 0.2]);
+                let material = materials.add(ColorMaterial::from(Color::srgb(color[0], color[1], color[2])));
+
                 let mut entity = commands.spawn((
                     MaterialMesh2dBundle {
                         mesh: meshes.add(mesh).into(),
-                        material: materials.add(ColorMaterial::from(Color::srgb(0.8, 0.2, 0.2))),
+                        material,
                         transform: Transform::from_translation(Vec3::new(
                             obstacle_data.position.x,
                             obstacle_data.position.y,
@@ -121,13 +125,13 @@ pub mod gameplay {
 
     }
 
+
     // Collision Event System
     pub fn collision_event_system(
         mut collision_events: EventReader<CollisionEvent>,
         mut next_state: ResMut<NextState<GameState>>,
-        game_audio: Res<GameAudio>,             // Access loaded audio
-        mut commands: Commands,                 // Needed to spawn AudioBundle
         obstacle_query: Query<(Entity, &Transform), With<Obstacle>>,
+        non_lethal_query: Query<Entity, With<NonLethal>>,
         finish_query: Query<Entity, With<FinishLine>>,
         player_query: Query<&Transform, With<Player>>,
     ) {
@@ -135,32 +139,36 @@ pub mod gameplay {
             match event {
                 CollisionEvent::Started(e1, e2, _) => {
                     if let Ok(player_transform) = player_query.get_single() {
-                        let (obstacle_entity, _) = if let Ok((entity, _)) = obstacle_query.get(*e1) {
-                            (entity, true)
-                        } else if let Ok((entity, _)) = obstacle_query.get(*e2) {
-                            (entity, true)
+                        let (obstacle_entity, obstacle_transform) = if let Ok((entity, transform)) = obstacle_query.get(*e1) {
+                            (entity, transform)
+                        } else if let Ok((entity, transform)) = obstacle_query.get(*e2) {
+                            (entity, transform)
                         } else {
                             continue;
                         };
 
-                        // Play Victory Sound if finish line is reached
+                        // Check if the collision is with the finish line
                         if finish_query.get(obstacle_entity).is_ok() {
-                            commands.spawn(AudioBundle {
-                                source: game_audio.victory_sound.clone(),
-                                settings: PlaybackSettings::ONCE,
-                            });
                             next_state.set(GameState::VictoryScreen);
                         } else {
-                            // Play Death Sound for lethal collisions
-                            commands.spawn(AudioBundle {
-                                source: game_audio.death_sound.clone(),
-                                settings: PlaybackSettings::ONCE,
-                            });
-                            next_state.set(GameState::GameOver);
+                            let is_non_lethal = non_lethal_query.get(obstacle_entity).is_ok();
+                            let player_size = Vec2::new(30.0, 30.0); // Assuming player size is 30x30
+                            let obstacle_size = Vec2::new(25.0, 25.0); // Assuming obstacle size is 25x25
+                            if is_non_lethal && is_top_collision(player_transform, player_size, obstacle_transform, obstacle_size) {
+                                // Allow jumping on top of non-lethal obstacles
+                                continue;
+                            } else {
+                                // Handle lethal collision
+                                next_state.set(GameState::GameOver);
+                            }
                         }
+                    } else {
+                        error!("Failed to retrieve player entity. Collision handling skipped.");
                     }
                 }
-                _ => {}
+                CollisionEvent::Stopped(_, _, _) => {
+                    debug!("Collision stopped.");
+                }
             }
         }
     }
@@ -169,9 +177,9 @@ pub mod gameplay {
         next_state.set(GameState::GameOver);
     }
 
-    pub fn is_top_collision(player_transform: &Transform, obstacle_transform: &Transform) -> bool {
-        let player_bottom = player_transform.translation.y - 15.0;
-        let obstacle_top = obstacle_transform.translation.y + 12.5;
+    pub fn is_top_collision(player_transform: &Transform, player_size: Vec2, obstacle_transform: &Transform, obstacle_size: Vec2) -> bool {
+        let player_bottom = player_transform.translation.y - player_size.y / 2.0;
+        let obstacle_top = obstacle_transform.translation.y + obstacle_size.y / 2.0;
         player_bottom > obstacle_top
     }
 
@@ -197,7 +205,7 @@ pub mod gameplay {
     ) {
         for mut velocity in &mut query {
             velocity.linvel.x = 200.0;
-            // debug!("Player horizontal: {}", velocity.linvel.x);
+            debug!("Player horizontal: {}", velocity.linvel.x);
             // debug!("Abs: {}", velocity.linvel.y.abs());
 
             if keyboard_input.pressed(KeyCode::Space) || keyboard_input.pressed(KeyCode::ArrowUp) {
@@ -304,17 +312,24 @@ pub fn progress_tracker_system(
     if let (Ok(player_transform), Ok(finish_transform)) =
         (player_query.get_single(), finish_query.get_single())
     {
-        let start_x: f32 = -200.0; // Player starting X position
+        let start_x: f32 = -200.0;
         let player_x: f32 = player_transform.translation.x;
         let finish_x: f32 = finish_transform.translation.x;
-
-        // Ensure we don’t divide by zero or go negative
-        let total_distance = (finish_x - start_x).max(1.0);
+        let total_distance = (finish_x - start_x).max(1.0); // Prevent division by zero
         let distance_traveled: f32 = (player_x - start_x).max(0.0);
 
-        // Calculate progress percentage
         let progress_percentage = (distance_traveled / total_distance) * 100.0;
-        progress.current_percentage = progress_percentage.clamp(0.0, 100.0); // Clamp to avoid overflows
+        progress.current_percentage = progress_percentage.clamp(0.0, 100.0); // **Fix applied here**
+
+        // Save progress to leaderboard
+        let file_path = "assets/progress.json";
+        let mut history = ProgressHistory::load(file_path).unwrap_or_else(|_| ProgressHistory::default());
+        let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let new_entry = ProgressEntry {
+            date,
+            percentage: progress.current_percentage, // Ensure clamped value is saved
+        };
+        history.add_entry(new_entry, file_path);
     }
 }
 
@@ -348,5 +363,34 @@ pub fn play_sound(commands: &mut Commands, sound: Handle<AudioSource>) {
         source: sound,
         settings: PlaybackSettings::ONCE,
     });
+}
+
+pub fn setup_leaderboard(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    let file_path = "assets/progress.json";
+    let history = ProgressHistory::load(file_path);
+
+    let mut leaderboard_text = "Leaderboard:\n".to_string();
+
+    if let Ok(history) = ProgressHistory::load(file_path) {
+        for entry in history.entries.iter().take(5) {
+            leaderboard_text.push_str(&format!("{}: {:.1}%\n", entry.date, entry.percentage));
+        }
+    } else {
+        warn!("Failed to load progress history. No leaderboard data available.");
+    }
+
+    commands.spawn((
+        TextBundle::from_section(
+            leaderboard_text,
+            TextStyle {
+                font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                font_size: 20.0,
+                color: Color::WHITE,
+            },
+        ),
+    ));
 }
 

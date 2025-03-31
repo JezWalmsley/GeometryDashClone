@@ -2,7 +2,7 @@
 use bevy::app::AppExit;
 use bevy::prelude::*;
 
-use crate::components::{BackButton, LevelButton, QuitButton, SelectedLevel, StartButton, UICamera, RestartButton, GameOverText, ReturnToMenuButton, NextLevelButton, LevelProgress, ProgressText};
+use crate::components::{BackButton, LevelButton, QuitButton, SelectedLevel, StartButton, UICamera, RestartButton, GameOverText, ReturnToMenuButton, NextLevelButton, LevelProgress, ProgressText, LeaderboardButton, ProgressHistory};
 use crate::states::GameState;
 
 pub fn setup_title_screen(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -90,7 +90,7 @@ pub fn setup_title_screen(mut commands: Commands, asset_server: Res<AssetServer>
                             align_items: AlignItems::Center,
                             ..default()
                         },
-                        background_color: BackgroundColor(Color::srgb(0.5, 0.5, 0.5)),
+                        background_color: BackgroundColor(Color::srgb(0.01, 0.01, 0.01)),
                         ..default()
                     },
                     LevelButton { level_id: 0 }, // Special marker for editor
@@ -101,7 +101,9 @@ pub fn setup_title_screen(mut commands: Commands, asset_server: Res<AssetServer>
                         TextStyle {
                             font: asset_server.load("fonts/FiraSans-Bold.ttf"),
                             font_size: 40.0,
-                            color: Color::BLACK,
+                            // color: Color::BLACK,
+                            // gray color
+                            color: Color::srgb(0.217, 0.217, 0.217),
                         },
                     ));
                 });
@@ -146,28 +148,37 @@ pub fn button_system(
             Option<&StartButton>,
             Option<&QuitButton>,
             Option<&LevelButton>,
+            Option<&LeaderboardButton>,
+            Option<&BackButton>,
         ),
         (Changed<Interaction>, With<Button>),
     >,
     mut next_state: ResMut<NextState<GameState>>,
     mut app_exit_events: EventWriter<AppExit>,
 ) {
-    for (interaction, mut color, start_button, quit_button, level_button) in interaction_query.iter_mut() {
+    for (interaction, mut color, start_button, quit_button, level_button, leaderboard_button, back_button) in
+        interaction_query.iter_mut()
+    {
         match *interaction {
             Interaction::Pressed => {
                 debug!("Button pressed.");
                 *color = BackgroundColor(Color::srgb(0.25, 0.25, 0.25));
+
                 if start_button.is_some() {
                     info!("Start button pressed. Transitioning to Level Selection.");
                     next_state.set(GameState::LevelSelection);
                 } else if quit_button.is_some() {
-                    info!("Quit button pressed. Triggering AppExit event.");
+                    info!("Quit button pressed. Exiting...");
                     app_exit_events.send(AppExit::Success);
                 } else if let Some(level_button) = level_button {
-                    if level_button.level_id == 0 {
-                        info!("Edit Level button pressed. Transitioning to Editor state.");
-                        next_state.set(GameState::Editor);
-                    }
+                    info!("Level {} selected. Transitioning to Playing state.", level_button.level_id);
+                    next_state.set(GameState::Playing);
+                } else if leaderboard_button.is_some() {
+                    info!("Leaderboard button pressed. Transitioning to LeaderboardScreen.");
+                    next_state.set(GameState::LeaderboardScreen);
+                } else if back_button.is_some() {
+                    info!("Back button pressed. Returning to Title Screen.");
+                    next_state.set(GameState::TitleScreen);
                 }
             }
             Interaction::Hovered => {
@@ -180,6 +191,7 @@ pub fn button_system(
         }
     }
 }
+
 
 pub fn setup_level_selection(mut commands: Commands, asset_server: Res<AssetServer>) {
     info!("Setting up level selection screen...");
@@ -586,6 +598,35 @@ pub fn setup_victory_screen(mut commands: Commands, asset_server: Res<AssetServe
                     ));
                 });
 
+            // Leaderboard button
+            parent
+                .spawn((
+                    ButtonBundle {
+                        style: Style {
+                            width: Val::Px(200.0),
+                            height: Val::Px(65.0),
+                            margin: UiRect::all(Val::Px(10.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::srgb(0.5, 0.5, 0.5)),
+                        ..default()
+                    },
+                    LeaderboardButton, // New marker component
+                ))
+                .with_children(|button| {
+                    button.spawn(TextBundle::from_section(
+                        "Leaderboard",
+                        TextStyle {
+                            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                            font_size: 40.0,
+                            color: Color::BLACK,
+                        },
+                    ));
+                });
+
+
             // Return to Menu Button
             parent
                 .spawn((
@@ -624,13 +665,14 @@ pub fn victory_screen_buttons(
             Option<&NextLevelButton>,
             Option<&RestartButton>,
             Option<&ReturnToMenuButton>,
+            Option<&LeaderboardButton>, // New leaderboard button
         ),
         (Changed<Interaction>, With<Button>),
     >,
     mut next_state: ResMut<NextState<GameState>>,
     mut selected_level: ResMut<SelectedLevel>,
 ) {
-    for (interaction, mut color, next_level_button, restart_button, return_to_menu_button) in interaction_query.iter_mut() {
+    for (interaction, mut color, next_level_button, restart_button, return_to_menu_button, leaderboard_button) in interaction_query.iter_mut() {
         match *interaction {
             Interaction::Pressed => {
                 *color = BackgroundColor(Color::srgb(0.25, 0.25, 0.25)); // Dark gray when pressed
@@ -638,13 +680,16 @@ pub fn victory_screen_buttons(
                 if next_level_button.is_some() {
                     info!("Next Level button pressed.");
                     selected_level.level_id += 1; // Move to the next level
-                    next_state.set(GameState::Playing); // Start the next level
+                    next_state.set(GameState::Playing);
                 } else if restart_button.is_some() {
                     info!("Restart button pressed. Restarting current level...");
-                    next_state.set(GameState::Playing); // Restart the current level
+                    next_state.set(GameState::Playing);
                 } else if return_to_menu_button.is_some() {
                     info!("Return to Menu button pressed. Going back to the main menu...");
-                    next_state.set(GameState::TitleScreen); // Return to the main menu
+                    next_state.set(GameState::TitleScreen);
+                } else if leaderboard_button.is_some() {
+                    info!("Leaderboard button pressed. Showing leaderboard for level {}.", selected_level.level_id);
+                    next_state.set(GameState::LeaderboardScreen); // New game state for leaderboard
                 }
             }
             Interaction::Hovered => {
@@ -656,6 +701,7 @@ pub fn victory_screen_buttons(
         }
     }
 }
+
 
 pub fn cleanup_victory_screen(
     mut commands: Commands,
@@ -684,6 +730,108 @@ pub fn update_progress_ui(
             text.sections[0].value = format!("Progress: {:.1}%", progress.current_percentage);
         }
     }
+}
+
+pub fn setup_leaderboard_screen(mut commands: Commands, asset_server: Res<AssetServer>) {
+    info!("Setting up the leaderboard screen...");
+
+    // Spawn a UI camera
+    commands.spawn((Camera2dBundle::default(), UICamera));
+
+    // Root UI node
+    commands
+        .spawn(NodeBundle {
+            style: Style {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            background_color: BackgroundColor(Color::srgb(0.1, 0.1, 0.1)),
+            ..default()
+        })
+        .with_children(|parent| {
+            // Title
+            parent.spawn(TextBundle {
+                text: Text::from_section(
+                    "Leaderboard",
+                    TextStyle {
+                        font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                        font_size: 60.0,
+                        color: Color::WHITE,
+                    },
+                ),
+                style: Style {
+                    margin: UiRect::bottom(Val::Px(50.0)),
+                    ..default()
+                },
+                ..default()
+            });
+
+            // Leaderboard text
+            parent.spawn(TextBundle {
+                text: Text::from_section(
+                    "Loading...",
+                    TextStyle {
+                        font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                        font_size: 30.0,
+                        color: Color::WHITE,
+                    },
+                ),
+                ..default()
+            });
+
+            // **Back Button**
+            parent
+                .spawn((
+                    ButtonBundle {
+                        style: Style {
+                            width: Val::Px(200.0),
+                            height: Val::Px(65.0),
+                            margin: UiRect::all(Val::Px(10.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::srgb(0.5, 0.5, 0.5)),
+                        ..default()
+                    },
+                    BackButton, // This component ensures it works in button_system
+                ))
+                .with_children(|button| {
+                    button.spawn(TextBundle::from_section(
+                        "Back",
+                        TextStyle {
+                            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                            font_size: 40.0,
+                            color: Color::BLACK,
+                        },
+                    ));
+                });
+
+            debug!("Leaderboard back button added.");
+        });
+}
+
+
+pub fn cleanup_leaderboard_screen(
+    mut commands: Commands,
+    ui_entities: Query<Entity, With<Node>>,
+    camera_entities: Query<Entity, With<Camera>>,
+) {
+    // Despawn all UI nodes related to the Leaderboard Screen
+    for entity in ui_entities.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+
+    // Despawn the UI camera for the Leaderboard Screen
+    for entity in camera_entities.iter() {
+        commands.entity(entity).despawn();
+    }
+
+    info!("Leaderboard Screen and UI Camera cleaned up successfully.");
 }
 
 

@@ -14,6 +14,7 @@ pub struct ObstacleData {
     pub vertices: [[f32; 2]; 4], // Define vertices of the triangle
     pub non_lethal: Option<bool>,
     pub is_finish: Option<bool>,
+    pub color: Option<[f32; 3]>,
 }
 
 // Example level loading function

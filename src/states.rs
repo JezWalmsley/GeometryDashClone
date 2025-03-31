@@ -9,4 +9,5 @@ pub enum GameState {
     GameOver,
     Editor,
     VictoryScreen,
+    LeaderboardScreen,
 }

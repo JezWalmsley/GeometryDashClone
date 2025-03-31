@@ -22,7 +22,7 @@ use crate::systems::gameplay::{collision_event_system, continuous_floor_system, 
 use bevy::log::LogPlugin;
 use crate::components::LevelProgress;
 use crate::systems::{play_death_sound, play_victory_sound, progress_tracker_system, setup_audio_system};
-use crate::ui::{cleanup_game_over_menu, cleanup_victory_screen, game_over_menu_buttons, setup_game_over_menu, setup_victory_screen, update_progress_ui, victory_screen_buttons};
+use crate::ui::{cleanup_game_over_menu, cleanup_leaderboard_screen, cleanup_victory_screen, game_over_menu_buttons, setup_game_over_menu, setup_leaderboard_screen, setup_victory_screen, update_progress_ui, victory_screen_buttons};
 
 fn main() {
     info!("Starting the application...");
@@ -79,6 +79,8 @@ fn main() {
         .add_systems(Update, victory_screen_buttons.run_if(in_state(GameState::VictoryScreen)))
         .add_systems(OnExit(GameState::VictoryScreen), cleanup_victory_screen)
         .add_systems(Update, (progress_tracker_system, update_progress_ui))
+        .add_systems(OnEnter(GameState::LeaderboardScreen), setup_leaderboard_screen)
+        .add_systems(OnExit(GameState::LeaderboardScreen), cleanup_leaderboard_screen)
         // Run the app
         .run();
     info!("Application has stopped running.");
